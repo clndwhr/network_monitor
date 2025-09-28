@@ -10,16 +10,9 @@ FROM ghcr.io/natecarlson/rm520-modem-buildenv:main
 # Add apt config to only install direct requirements
 #COPY 99minimal-apt-installs /etc/apt/apt.conf.d/
 # ADD entry-point.sh /opt/entry-point.sh
-WORKDIR /
-RUN pwd
-RUN ls -lthra
-RUN mkdir -p /opt
-RUN mkdir -p /opt/builds
-RUN mkdir -p /opt/rm520
-WORKDIR /opt/rm520
-RUN pwd
-RUN git clone https://github.com/clndwhr/network_monitor.git
-RUN pwd && ls -lthra
+RUN mkdir -p /opt/builds && mkdir -p /opt/rm520 && cd /opt/rm520 \
+    && git clone https://github.com/clndwhr/network_monitor.git \
+    && pwd && ls -lthra
 # RUN cd network_monitor \
 #         && make \
 #         && chmod 755 /opt/entry-point.sh \
