@@ -13,7 +13,7 @@ FROM ghcr.io/natecarlson/rm520-modem-buildenv:main
 
 RUN mkdir -p /opt/builds
 RUN mkdir -p /opt/rm520
-RUN cd /opt/rm520
+WORKDIR /opt/rm520
 RUN pwd
 RUN git clone https://github.com/clndwhr/network_monitor.git
 RUN pwd && ls -lthra
@@ -26,8 +26,8 @@ RUN pwd && ls -lthra
 
 # ENV LC_ALL=en_US.UTF-8
 
-#CMD ["bash"]
-ENTRYPOINT ["bash", "/opt/entry-point.sh"]
+CMD ["bash"]
+# ENTRYPOINT ["bash", "/opt/entry-point.sh"]
 
 # # ---- Builder for aarch64_cortex-a53 ----
 # FROM --platform=linux/arm64 debian:bullseye AS build-arm64
