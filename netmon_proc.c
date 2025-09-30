@@ -5,6 +5,7 @@
 #include <linux/string.h>     /* strlen, strcmp */
 #include <linux/version.h>    /* LINUX_VERSION_CODE / KERNEL_VERSION */
 #include <net/net_namespace.h>
+#include <linux/rtnetlink.h>  /* for rtnl_lock/rtnl_unlock */
 
 #define PROC_NAME "netmon"
 
