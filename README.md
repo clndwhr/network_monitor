@@ -28,6 +28,29 @@ This project provides a simple userspace daemon (`netmon`) and a kernel module (
    - `netmon` (userspace daemon)
    - `netmon_proc.ko` (kernel module)
 
+4. One-line build with Docker
+
+  ```
+  docker run --rm -v "$PWD":/work -w /work --platform linux/arm64 ubuntu:22.04 bash -c "
+    apt-get update && apt-get install -y --no-install-recommends build-essential make gcc-aarch64-linux-gnu git wget python3 libncurses-dev zlib1g-dev gawk flex bison bc unzip &&
+    git clone --depth 1 -b openwrt-22.03 https://git.openwrt.org/openwrt/openwrt.git /tmp/openwrt &&
+    cd /tmp/openwrt &&
+    git checkout v22.03.5 &&
+    ./scripts/feeds update -a && ./scripts/feeds install -a &&
+    echo 'CONFIG_TARGET_SYSTEM=\"Generic\"' > .config &&
+    echo 'CONFIG_TARGET_aarch64=y' >> .config &&
+    make defconfig &&
+    make target/linux/prepare V=s &&
+    KERNEL_DIR=\$(find build_dir/target-aarch64_* -name 'linux-*' -type d | head -1) &&
+    cd \$KERNEL_DIR &&
+    make scripts prepare modules_prepare &&
+    cd /work &&
+    make KERNEL_DIR=/tmp/openwrt/\$KERNEL_DIR ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules &&
+    aarch64-linux-gnu-gcc -O2 -Wall -static -o netmon-arm64 netmon.c &&
+    echo 'Build completed: netmon_proc.ko and netmon-arm64'
+  "
+  ```
+
 ---
 
 ## Install and Use

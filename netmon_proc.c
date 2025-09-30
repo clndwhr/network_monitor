@@ -2,6 +2,8 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/netdevice.h>
+#include <linux/string.h>     /* strlen, strcmp */
+#include <linux/version.h>    /* LINUX_VERSION_CODE / KERNEL_VERSION */
 
 #define PROC_NAME "netmon"
 
