@@ -1,0 +1,38 @@
+#!/bin/sh /etc/rc.common
+# OpenWrt init script for websocat WebSocket server
+# Place in /etc/init.d/websocat
+# Enable with: /etc/init.d/websocat enable
+# Start with: /etc/init.d/websocat start
+
+START=99
+STOP=10
+
+USE_PROCD=1
+
+PROG=/usr/bin/websocat
+LISTEN_ADDR="0.0.0.0:8838"
+LOG_FILE="/tmp/websocat"
+
+start_service() {
+	procd_open_instance
+	procd_set_param command "$PROG" -t -E "ws-l:${LISTEN_ADDR}" "log:broadcast:mirror:"
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param respawn ${respawn_threshold:-3600} ${respawn_timeout:-5} ${respawn_retry:-5}
+	procd_close_instance
+	
+	logger -t websocat "WebSocket server started on ${LISTEN_ADDR}"
+}
+
+stop_service() {
+	logger -t websocat "WebSocket server stopped"
+}
+
+reload_service() {
+	stop
+	start
+}
+
+service_triggers() {
+	procd_add_reload_trigger "websocat"
+}
