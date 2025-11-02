@@ -1,3 +1,70 @@
+/*
+ * =============================================================================
+ * BRIDGE TRAFFIC MONITOR - Multi-Source Network Statistics
+ * =============================================================================
+ *
+ * Program:        bridge_traffic_monitor
+ * Description:    Real-time network interface traffic monitoring utility
+ *                 with UCI/config file support and WebSocket output
+ *
+ * Author:         Christopher Landwehr
+ * Email:          [clndwhr@gmail.com]
+ * Organization:   [J & C Landwehr LLC]
+ *
+ * Version:        1.0.2
+ * Created:        October 29, 2025
+ * Last Modified:  October 29, 2025
+ *
+ * License:        GNU General Public License v3.0
+ * Copyright:      Copyright (C) 2025 Christopher Landwehr
+ *
+ * Repository:     https://github.com/clndwhr/network-monitoring
+ * Documentation:  See README.md
+ *
+ * =============================================================================
+ * FEATURES:
+ * - Real-time network interface statistics monitoring
+ * - Multiple configuration sources (UCI, file, CLI, defaults)
+ * - JSON and human-readable output formats
+ * - WebSocket integration via websocat
+ * - Automatic configuration bootstrapping
+ * - Bridge traffic monitoring with iptables integration
+ * - Configurable refresh rates and interface filtering
+ *
+ * SUPPORTED PLATFORMS:
+ * - Linux (generic)
+ * - OpenWrt/LEDE
+ * - Embedded systems with UCI support
+ *
+ * DEPENDENCIES:
+ * - Standard C library
+ * - Linux sysfs (/sys/class/net/)
+ * - iptables (optional, for bridge stats)
+ * - UCI (optional, for OpenWrt configuration)
+ * - websocat (optional, for WebSocket output)
+ *
+ * COMPILATION:
+ * gcc -o bridge_traffic_monitor bridge_traffic_monitor.c
+ *
+ * =============================================================================
+ * LICENSE INFORMATION:
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ *
+ * =============================================================================
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -8,8 +75,23 @@
 #include <sys/types.h>
 #include <errno.h>
 
-// gcc -o bridge_traffic_monitor bridge_traffic_monitor.c
+/*
+ * Program metadata and version information
+ */
+#define PROGRAM_NAME        "bridge_traffic_monitor"
+#define PROGRAM_VERSION     "1.0.2"
+#define PROGRAM_AUTHOR      "Christopher Landwehr"
+#define PROGRAM_EMAIL       "clndwhr@gmail.com"
+#define PROGRAM_ORG         "J & C Landwehr LLC"
+#define PROGRAM_LICENSE     "GPL-3.0"
+#define PROGRAM_COPYRIGHT   "Copyright (C) 2025 Christopher Landwehr"
+#define PROGRAM_URL         "https://github.com/clndwhr/network-monitoring"
+#define BUILD_DATE          __DATE__
+#define BUILD_TIME          __TIME__
 
+/*
+ * Configuration constants
+ */
 #define MAX_INTERFACES 20
 #define MAX_REQUIRED_INTERFACES 10
 #define UCI_PACKAGE "quecmanager"
@@ -17,7 +99,13 @@
 #define CONFIG_FILE "/etc/quecmanager/settings/bridge_traffic_monitor.conf"
 #define DEFAULT_OUTPUT_DIR "/tmp/quecmanager"
 #define PID_FILE "/tmp/quecmanager/bridge_traffic_monitor.pid"
-#define DEFAULT_REFRESH_RATE_MS 100
+#define DEFAULT_REFRESH_RATE_MS 1000
+#define DEFAULT_MINIMAL_MODE 1
+#define DEFAULT_JSON_MODE 1
+#define DEFAULT_WEBSOCAT_ENABLED 1
+#define DEFAULT_WEBSOCAT_URL "ws://localhost:8838"
+#define DEFAULT_CHANNEL "network-monitor"
+
 
 // Configuration structure
 struct config {
@@ -30,7 +118,8 @@ struct config {
     int required_interface_count;
     int refresh_rate_ms; // Refresh rate in milliseconds
     int websocat_enabled; // Send output to websocat
-    char websocat_url[256]; // WebSocket URL (host:port or full ws:// URL)
+    char websocat_url[256]; // WebSocket URL (host:port or full ws:// or wss:// URL)
+    int websocat_insecure; // Skip SSL certificate verification for WSS connections
 };
 
 struct interface_stats {
@@ -45,6 +134,42 @@ struct interface_stats {
     unsigned long long tx_dropped;
     int active;
 };
+
+/*
+ * Display program version and build information
+ */
+void show_version_info() {
+    printf("═══════════════════════════════════════════════════════════════\n");
+    printf("  %s v%s\n", PROGRAM_NAME, PROGRAM_VERSION);
+    printf("  Multi-Source Network Statistics Monitor\n");
+    printf("═══════════════════════════════════════════════════════════════\n");
+    printf("Author:       %s <%s>\n", PROGRAM_AUTHOR, PROGRAM_EMAIL);
+    printf("Organization: %s\n", PROGRAM_ORG);
+    printf("License:      %s\n", PROGRAM_LICENSE);
+    printf("Copyright:    %s\n", PROGRAM_COPYRIGHT);
+    printf("Repository:   %s\n", PROGRAM_URL);
+    printf("Build:        %s %s\n", BUILD_DATE, BUILD_TIME);
+    printf("═══════════════════════════════════════════════════════════════\n");
+}
+
+/*
+ * Display program metadata in JSON format
+ */
+void show_version_json() {
+    printf("{\n");
+    printf("  \"program\": \"%s\",\n", PROGRAM_NAME);
+    printf("  \"version\": \"%s\",\n", PROGRAM_VERSION);
+    printf("  \"description\": \"Multi-Source Network Statistics Monitor\",\n");
+    printf("  \"author\": \"%s\",\n", PROGRAM_AUTHOR);
+    printf("  \"email\": \"%s\",\n", PROGRAM_EMAIL);
+    printf("  \"organization\": \"%s\",\n", PROGRAM_ORG);
+    printf("  \"license\": \"%s\",\n", PROGRAM_LICENSE);
+    printf("  \"copyright\": \"%s\",\n", PROGRAM_COPYRIGHT);
+    printf("  \"repository\": \"%s\",\n", PROGRAM_URL);
+    printf("  \"build_date\": \"%s\",\n", BUILD_DATE);
+    printf("  \"build_time\": \"%s\"\n", BUILD_TIME);
+    printf("}\n");
+}
 
 // Read a stat value from sysfs
 unsigned long long read_stat(const char *interface, const char *stat_name) {
@@ -256,42 +381,52 @@ void remove_pid_file(const char *pid_path) {
 }
 
 // Send data to websocat
-int send_to_websocat(const char *data, const char *ws_url) {
+int send_to_websocat(const char *data, const char *ws_url, int insecure) {
     FILE *fp;
     char cmd[512];
     int result;
 
-    // Ensure URL has ws:// prefix
+    // Ensure URL has ws:// or wss:// prefix
     char full_url[256];
-    if (strncmp(ws_url, "ws://", 5) != 0) {
+    if (strncmp(ws_url, "ws://", 5) != 0 && strncmp(ws_url, "wss://", 6) != 0) {
         snprintf(full_url, sizeof(full_url), "ws://%s", ws_url);
     } else {
         snprintf(full_url, sizeof(full_url), "%s", ws_url);
     }
 
-    // Create command: echo "data" | websocat --one-message ws://url
-    snprintf(cmd, sizeof(cmd), "echo '%s' | websocat --one-message '%s' 2>/dev/null", data, full_url);
-    
+    // Create command: websocat [-k] --one-message ws://url
+    // Determine insecure flag based on URL scheme:
+    // ws:// = no -k flag needed (inherently insecure), wss:// = use -k flag (skip SSL verification)
+    // skip SSL verification because we inherently use a self-signed certificate
+    int use_insecure = (strncmp(full_url, "wss://", 6) == 0);
+
+    // Create command: echo "data" | websocat [-k] --one-message ws://url
+    if (use_insecure) {
+        snprintf(cmd, sizeof(cmd), "echo '%s' | websocat -k --one-message '%s' 2>/dev/null", data, full_url);
+    } else {
+        snprintf(cmd, sizeof(cmd), "echo '%s' | websocat --one-message '%s' 2>/dev/null", data, full_url);
+    }
+
     fp = popen(cmd, "r");
     if (!fp) {
         return -1;
     }
-    
+
     result = pclose(fp);
     return (result == 0) ? 0 : -1;
 }
 
 // Send file content to websocat
-int send_file_to_websocat(const char *filepath, const char *ws_url, int compact_json) {
+int send_file_to_websocat(const char *filepath, const char *ws_url, int compact_json, int insecure) {
     FILE *file_fp, *ws_fp;
     char cmd[512];
     char line[4096];
     int result;
     int first_line = 1;
 
-    // Ensure URL has ws:// prefix
+    // Ensure URL has ws:// or wss:// prefix
     char full_url[256];
-    if (strncmp(ws_url, "ws://", 5) != 0) {
+    if (strncmp(ws_url, "ws://", 5) != 0 && strncmp(ws_url, "wss://", 6) != 0) {
         snprintf(full_url, sizeof(full_url), "ws://%s", ws_url);
     } else {
         snprintf(full_url, sizeof(full_url), "%s", ws_url);
@@ -303,8 +438,17 @@ int send_file_to_websocat(const char *filepath, const char *ws_url, int compact_
         return -1;
     }
 
-    // Create command: websocat --one-message ws://url
-    snprintf(cmd, sizeof(cmd), "websocat --one-message '%s' 2>/dev/null", full_url);
+    // Create command: websocat [-k] --one-message ws://url
+    // Determine insecure flag based on URL scheme:
+    // ws:// = no -k flag needed (inherently insecure), wss:// = use -k flag (skip SSL verification)
+    // skip SSL verification because we inherently use a self-signed certificate
+    int use_insecure = (strncmp(full_url, "wss://", 6) == 0);
+
+    if (use_insecure) {
+        snprintf(cmd, sizeof(cmd), "websocat -k --one-message '%s' 2>/dev/null", full_url);
+    } else {
+        snprintf(cmd, sizeof(cmd), "websocat --one-message '%s' 2>/dev/null", full_url);
+    }
     ws_fp = popen(cmd, "w");
     if (!ws_fp) {
         fclose(file_fp);
@@ -414,8 +558,8 @@ int load_uci_config(struct config *cfg) {
     // Read minimal_mode
     value = read_uci_value(UCI_PACKAGE, UCI_SECTION, "minimal_mode");
     if (value) {
-        cfg->minimal_mode = (strcmp(value, "1") == 0 || 
-                            strcmp(value, "true") == 0 || 
+        cfg->minimal_mode = (strcmp(value, "1") == 0 ||
+                            strcmp(value, "true") == 0 ||
                             strcmp(value, "yes") == 0 ||
                             strcmp(value, "enabled") == 0);
         found = 1;
@@ -424,8 +568,8 @@ int load_uci_config(struct config *cfg) {
     // Read json_mode
     value = read_uci_value(UCI_PACKAGE, UCI_SECTION, "json_mode");
     if (value) {
-        cfg->json_mode = (strcmp(value, "1") == 0 || 
-                         strcmp(value, "true") == 0 || 
+        cfg->json_mode = (strcmp(value, "1") == 0 ||
+                         strcmp(value, "true") == 0 ||
                          strcmp(value, "yes") == 0 ||
                          strcmp(value, "enabled") == 0);
         found = 1;
@@ -455,6 +599,16 @@ int load_uci_config(struct config *cfg) {
     value = read_uci_value(UCI_PACKAGE, UCI_SECTION, "websocat_url");
     if (value) {
         snprintf(cfg->websocat_url, sizeof(cfg->websocat_url), "%s", value);
+        found = 1;
+    }
+
+    // Read websocat_insecure
+    value = read_uci_value(UCI_PACKAGE, UCI_SECTION, "websocat_insecure");
+    if (value) {
+        cfg->websocat_insecure = (strcmp(value, "1") == 0 || 
+                                 strcmp(value, "true") == 0 || 
+                                 strcmp(value, "yes") == 0 ||
+                                 strcmp(value, "enabled") == 0);
         found = 1;
     }
 
@@ -543,6 +697,11 @@ int load_file_config(struct config *cfg) {
             } else if (strcmp(key_trim, "websocat_url") == 0) {
                 snprintf(cfg->websocat_url, sizeof(cfg->websocat_url), "%s", value_trim);
                 found = 1;
+            } else if (strcmp(key_trim, "websocat_insecure") == 0) {
+                cfg->websocat_insecure = (strcmp(value_trim, "1") == 0 || 
+                                         strcmp(value_trim, "true") == 0 || 
+                                         strcmp(value_trim, "yes") == 0);
+                found = 1;
             } else if (strcmp(key_trim, "required_interfaces") == 0) {
                 cfg->required_interface_count = 0;
                 char *token = strtok(value_trim, ",");
@@ -572,12 +731,13 @@ int load_file_config(struct config *cfg) {
 void load_config(struct config *cfg) {
     // Set defaults first
     snprintf(cfg->output_path, sizeof(cfg->output_path), "%s/bridge_traffic_monitor", DEFAULT_OUTPUT_DIR);
-    cfg->minimal_mode = 0;
-    cfg->json_mode = 0;
+    cfg->minimal_mode = DEFAULT_MINIMAL_MODE;
+    cfg->json_mode = DEFAULT_JSON_MODE;
     cfg->refresh_rate_ms = DEFAULT_REFRESH_RATE_MS;
-    cfg->websocat_enabled = 0;
-    snprintf(cfg->websocat_url, sizeof(cfg->websocat_url), "ws://localhost:8838");
-    snprintf(cfg->channel, sizeof(cfg->channel), "network-monitor");
+    cfg->websocat_enabled = DEFAULT_WEBSOCAT_ENABLED;
+    snprintf(cfg->websocat_url, sizeof(cfg->websocat_url), DEFAULT_WEBSOCAT_URL);
+    cfg->websocat_insecure = 0; // Default to secure connections
+    snprintf(cfg->channel, sizeof(cfg->channel), DEFAULT_CHANNEL);
     snprintf(cfg->config_source, sizeof(cfg->config_source), "Defaults");
 
     // Set default required interfaces
@@ -836,7 +996,7 @@ void monitor_traffic(struct config *cfg) {
 
         // Send to websocat if enabled
         if (cfg->websocat_enabled) {
-            send_file_to_websocat(cfg->output_path, cfg->websocat_url, cfg->json_mode);
+            send_file_to_websocat(cfg->output_path, cfg->websocat_url, cfg->json_mode, cfg->websocat_insecure);
         }
 
         prev_time = current_time;
@@ -887,7 +1047,7 @@ int main(int argc, char *argv[]) {
                 snprintf(cfg.websocat_url, sizeof(cfg.websocat_url), "%s", argv[++i]);
                 config_overridden = 1;
             } else {
-                fprintf(stderr, "Error: --websocat requires a URL argument (host:port or ws://host:port)\n");
+                fprintf(stderr, "Error: --websocat requires a URL argument (host:port, ws://host:port, or wss://host:port)\n");
                 return 1;
             }
         } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--channel") == 0) {
@@ -898,6 +1058,12 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Error: --channel requires a channel name argument\n");
                 return 1;
             }
+        } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
+            show_version_info();
+            return 0;
+        } else if (strcmp(argv[i], "--version-json") == 0) {
+            show_version_json();
+            return 0;
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             goto show_help;
         } else {
@@ -919,8 +1085,11 @@ int main(int argc, char *argv[]) {
     }
 
     printf("═══════════════════════════════════════════════════════════════\n");
-    printf("  BRIDGE TRAFFIC MONITOR - Multi-Source Network Statistics\n");
+    printf("  %s v%s\n", PROGRAM_NAME, PROGRAM_VERSION);
+    printf("  Multi-Source Network Statistics Monitor\n");
     printf("═══════════════════════════════════════════════════════════════\n\n");
+    printf("Author: %s | License: %s\n", PROGRAM_AUTHOR, PROGRAM_LICENSE);
+    printf("Build:  %s %s\n\n", BUILD_DATE, BUILD_TIME);
     printf("This monitor combines:\n");
     printf("  1. Interface statistics (/sys/class/net/)\n");
     printf("  2. iptables packet counters (FORWARD chain for bridge)\n");
@@ -930,7 +1099,18 @@ int main(int argc, char *argv[]) {
     printf("  Output file:    %s\n", cfg.output_path);
     printf("  PID file:       %s\n", PID_FILE);
     printf("  Mode:           %s\n", cfg.json_mode ? "JSON" : (cfg.minimal_mode ? "MINIMAL" : "EXTENDED"));
-    printf("  WebSocket:      %s\n", cfg.websocat_enabled ? cfg.websocat_url : "Disabled");
+    if (cfg.websocat_enabled) {
+        // Determine connection type based on URL scheme
+        const char *connection_type = "";
+        if (strncmp(cfg.websocat_url, "wss://", 6) == 0) {
+            connection_type = " (SSL, cert verification disabled)";
+        } else if (strncmp(cfg.websocat_url, "ws://", 5) == 0) {
+            connection_type = " (plain text)";
+        }
+        printf("  WebSocket:      %s%s\n", cfg.websocat_url, connection_type);
+    } else {
+        printf("  WebSocket:      Disabled\n");
+    }
     printf("  Channel:        %s\n", cfg.channel);
     printf("\n");
 
@@ -943,8 +1123,12 @@ int main(int argc, char *argv[]) {
 
 show_help:
     printf("═══════════════════════════════════════════════════════════════\n");
-    printf("  BRIDGE TRAFFIC MONITOR - Multi-Source Network Statistics\n");
-    printf("═══════════════════════════════════════════════════════════════\n\n");
+    printf("  %s v%s\n", PROGRAM_NAME, PROGRAM_VERSION);
+    printf("  Multi-Source Network Statistics Monitor\n");
+    printf("═══════════════════════════════════════════════════════════════\n");
+    printf("Author: %s <%s>\n", PROGRAM_AUTHOR, PROGRAM_EMAIL);
+    printf("License: %s | Repository: %s\n\n", PROGRAM_LICENSE, PROGRAM_URL);
+
     printf("This monitor combines:\n");
     printf("  1. Interface statistics (/sys/class/net/)\n");
     printf("  2. iptables packet counters (FORWARD chain for bridge)\n");
@@ -963,7 +1147,7 @@ show_help:
     printf("  uci set %s.%s.json_mode='yes'\n", UCI_PACKAGE, UCI_SECTION);
     printf("  uci set %s.%s.refresh_rate_ms='100'\n", UCI_PACKAGE, UCI_SECTION);
     printf("  uci set %s.%s.websocat_enabled='yes'\n", UCI_PACKAGE, UCI_SECTION);
-    printf("  uci set %s.%s.websocat_url='ws://192.168.1.100:8838'\n", UCI_PACKAGE, UCI_SECTION);
+    printf("  uci set %s.%s.websocat_url='wss://secure.example.com:8838'\n", UCI_PACKAGE, UCI_SECTION);
     printf("  uci set %s.%s.required_interfaces='rmnet_data0,eth0,br-lan'\n", UCI_PACKAGE, UCI_SECTION);
     printf("  uci commit %s\n\n", UCI_PACKAGE);
 
@@ -975,7 +1159,7 @@ show_help:
     printf("  json_mode=yes|no                         (default: no)\n");
     printf("  refresh_rate_ms=100                      (default: %d, range: 1-10000)\n", DEFAULT_REFRESH_RATE_MS);
     printf("  websocat_enabled=yes|no                  (default: no)\n");
-    printf("  websocat_url=ws://host:port              (default: ws://localhost:8838)\n");
+    printf("  websocat_url=ws://host:port|wss://host   (default: ws://localhost:8838)\n");
     printf("  channel=network-monitor                   (default: network-monitor)\n");
     printf("  required_interfaces=eth0,br-lan,wlan0    (comma-separated list)\n\n");
 
@@ -984,21 +1168,43 @@ show_help:
     printf("  PID:     %s\n\n", PID_FILE);
 
     printf("Usage:\n");
-    printf("  Extended mode:   ./bridge_traffic_monitor\n");
-    printf("  Minimal mode:    ./bridge_traffic_monitor -m (or --minimal)\n");
-    printf("  JSON mode:       ./bridge_traffic_monitor -j (or --json)\n");
-    printf("  Custom output:   ./bridge_traffic_monitor -o /path/to/output\n");
-    printf("  Custom refresh:  ./bridge_traffic_monitor -r 500 (500ms refresh)\n");
-    printf("  WebSocket mode:  ./bridge_traffic_monitor -w ws://192.168.1.100:8838\n");
-    printf("  WebSocket mode:  ./bridge_traffic_monitor -w localhost:8838 (ws:// is optional)\n");
-    printf("  Combined:        ./bridge_traffic_monitor -j -r 1000 -w 192.168.1.100:9001\n\n");
+    printf("  Help & Version:\n");
+    printf("    ./bridge_traffic_monitor -h (or --help)     Show this help\n");
+    printf("    ./bridge_traffic_monitor -v (or --version)  Show version info\n");
+    printf("    ./bridge_traffic_monitor --version-json     Show version as JSON\n\n");
+    printf("  Operation Modes:\n");
+    printf("    ./bridge_traffic_monitor                     Extended mode (default)\n");
+    printf("    ./bridge_traffic_monitor -m (or --minimal)  Minimal mode\n");
+    printf("    ./bridge_traffic_monitor -j (or --json)     JSON mode\n\n");
+    printf("  Configuration:\n");
+    printf("    ./bridge_traffic_monitor -o /path/to/output  Custom output file\n");
+    printf("    ./bridge_traffic_monitor -r 500             Custom refresh (500ms)\n");
+    printf("    ./bridge_traffic_monitor -c channel-name    Custom channel name\n\n");
+    printf("  WebSocket:\n");
+    printf("    ./bridge_traffic_monitor -w ws://host:8838   WebSocket (plain text)\n");
+    printf("    ./bridge_traffic_monitor -w wss://host:8838  WebSocket SSL (no cert verification)\n");
+    printf("    ./bridge_traffic_monitor -w localhost:8838   WebSocket mode (defaults to ws://)\n\n");
+    printf("  Combined Examples:\n");
+    printf("    ./bridge_traffic_monitor -j -r 1000 -w 192.168.1.100:9001\n");
+    printf("    ./bridge_traffic_monitor -j -w wss://secure.example.com:8838\n");
+    printf("    ./bridge_traffic_monitor -m -o /tmp/stats.txt -r 2000\n\n");
 
     printf("View Output:\n");
     printf("  cat %s/bridge_traffic_monitor\n", DEFAULT_OUTPUT_DIR);
     printf("  watch -n 0.5 cat %s/bridge_traffic_monitor\n", DEFAULT_OUTPUT_DIR);
     printf("  cat /path/to/output.json | jq .\n\n");
 
-    printf("Note: Command line arguments override config file settings.\n\n");
+    printf("Notes:\n");
+    printf("  • Command line arguments override config file settings\n");
+    printf("  • Configuration priority: CLI > UCI > Config File > Defaults\n");
+    printf("  • WebSocket modes: ws:// = plain text, wss:// = SSL without cert verification\n");
+    printf("  • SSL certificate verification is disabled for wss:// connections (-k flag)\n");
+    printf("  • Use 'kill $(cat %s)' to stop the monitor\n\n", PID_FILE);
+
+    printf("═══════════════════════════════════════════════════════════════\n");
+    printf("Build: %s %s | License: %s\n", BUILD_DATE, BUILD_TIME, PROGRAM_LICENSE);
+    printf("For more information: %s\n", PROGRAM_URL);
+    printf("═══════════════════════════════════════════════════════════════\n");
 
     return 0;
 }

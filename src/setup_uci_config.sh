@@ -28,7 +28,7 @@ uci set quecmanager.bridge_monitor.required_interfaces='br-lan,eth0,rmnet_data0,
 uci set quecmanager.bridge_monitor.websocat_enabled='yes'
 
 # Configure WebSocket URL
-uci set quecmanager.bridge_monitor.websocat_url='ws://localhost:8838'
+uci set quecmanager.bridge_monitor.websocat_url='wss://localhost:8838/data'
 
 # Commit changes
 uci commit quecmanager
@@ -46,7 +46,7 @@ echo "  uci set quecmanager.bridge_monitor.minimal_mode='no'"
 echo "  uci set quecmanager.bridge_monitor.json_mode='yes'"
 echo "  uci set quecmanager.bridge_monitor.channel='network-monitor'"
 echo "  uci set quecmanager.bridge_monitor.websocat_enabled='yes'"
-echo "  uci set quecmanager.bridge_monitor.websocat_url='ws://192.168.224.1:8838'"
+echo "  uci set quecmanager.bridge_monitor.websocat_url='wss://localhost:8838/data'"
 echo "  uci commit quecmanager"
 
 echo ""
