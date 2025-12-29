@@ -1074,9 +1074,9 @@ int main(int argc, char *argv[]) {
 
     // Update config source if overridden by command line
     if (config_overridden) {
-        char temp[256];
+        char temp[100]; // Reserve space for " + CLI args" (11 chars + null terminator)
         snprintf(temp, sizeof(temp), "%s", cfg.config_source);
-        snprintf(cfg.config_source, sizeof(cfg.config_source), "%s + CLI args", temp);
+        snprintf(cfg.config_source, sizeof(cfg.config_source), "%.99s + CLI args", temp);
     }
 
     // Write PID file
