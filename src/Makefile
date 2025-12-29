@@ -4,27 +4,27 @@ DIRS = pdu_lib
 #CC = $(CROSS_COMPILE)gcc
 #STRIP = $(CROSS_COMPILE)strip
 #CFLAGS = -O2
-EXE = sms_tool
+EXE = bridge_traffic_monitor
 
 OBJS = pdu_lib/pdu.o pdu_lib/ucs2_to_utf8.o
 
 all: $(EXE)
 
-$(EXE): sms_main.o pdu_lib
-	$(CC) $(CFLAGS) sms_main.o $(OBJS) -o $(EXE)
+$(EXE): bridge_traffic_monitor.o pdu_lib
+	$(CC) $(CFLAGS) bridge_traffic_monitor.o $(OBJS) -o $(EXE)
 
-sms_main.o:
-	$(CC) $(CFLAGS) sms_main.c -c
+bridge_traffic_monitor.o:
+	$(CC) $(CFLAGS) bridge_traffic_monitor.c -c
 	
 pdu_lib: force_look
 	cd pdu_lib; CROSS_COMPILE=$(CROSS_COMPILE) $(MAKE) $(MFLAGS)
 	
 clean:
-	rm -rf *.o sms_tool
+	rm -rf *.o bridge_traffic_monitor
 	for d in $(DIRS); do (cd $$d; $(MAKE) clean); done
 
 strip:
-	$(STRIP) -s sms_tool
+	$(STRIP) -s bridge_traffic_monitor
 
 force_look:
 	true
