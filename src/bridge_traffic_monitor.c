@@ -112,7 +112,7 @@ struct config {
     char output_path[512];
     int minimal_mode;
     int json_mode;
-    char config_source[64]; // Track where config came from
+    char config_source[128]; // Track where config came from
     char channel[64]; // Channel name used in output (e.g., JSON "channel")
     char required_interfaces[MAX_REQUIRED_INTERFACES][32]; // List of required interfaces
     int required_interface_count;
@@ -1074,7 +1074,7 @@ int main(int argc, char *argv[]) {
 
     // Update config source if overridden by command line
     if (config_overridden) {
-        char temp[64];
+        char temp[128];
         snprintf(temp, sizeof(temp), "%s", cfg.config_source);
         snprintf(cfg.config_source, sizeof(cfg.config_source), "%s + CLI args", temp);
     }
