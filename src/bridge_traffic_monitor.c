@@ -1074,9 +1074,18 @@ int main(int argc, char *argv[]) {
 
     // Update config source if overridden by command line
     if (config_overridden) {
-        char temp[100]; // Reserve space for " + CLI args" (11 chars + null terminator)
-        snprintf(temp, sizeof(temp), "%s", cfg.config_source);
-        snprintf(cfg.config_source, sizeof(cfg.config_source), "%.99s + CLI args", temp);
+        // Use strncat to safely append " + CLI args" without buffer overflow
+        size_t current_len = strlen(cfg.config_source);
+        size_t max_append = sizeof(cfg.config_source) - current_len - 1;
+        const char *suffix = " + CLI args";
+
+        if (max_append > strlen(suffix)) {
+            strncat(cfg.config_source, suffix, max_append);
+        } else {
+            // If not enough space, truncate original and add suffix
+            cfg.config_source[sizeof(cfg.config_source) - strlen(suffix) - 1] = '\0';
+            strcat(cfg.config_source, suffix);
+        }
     }
 
     // Write PID file
