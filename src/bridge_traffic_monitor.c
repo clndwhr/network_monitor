@@ -1074,7 +1074,7 @@ int main(int argc, char *argv[]) {
 
     // Update config source if overridden by command line
     if (config_overridden) {
-        char temp[128];
+        char temp[256];
         snprintf(temp, sizeof(temp), "%s", cfg.config_source);
         snprintf(cfg.config_source, sizeof(cfg.config_source), "%s + CLI args", temp);
     }
