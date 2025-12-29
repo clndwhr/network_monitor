@@ -24,7 +24,7 @@ RUN mkdir -p /opt/builds && mkdir -p /opt/rm520 \
         && cd /opt/rm520 \
         && git clone https://github.com/clndwhr/network_monitor.git \
         && cd network_monitor/src/ \
-        && make \
+        && gcc -o bridge_traffic_monitor bridge_traffic_monitor.c \
         && chmod 755 /opt/entry-point.sh \
         && chown 1000:1000 /opt/entry-point.sh \
         && mv /opt/rm520/network_monitor/src/network_monitor /opt/rm520/network_monitor/src/network_monitor-${buildTarget}
