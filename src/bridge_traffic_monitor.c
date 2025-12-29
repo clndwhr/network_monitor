@@ -636,7 +636,7 @@ int load_uci_config(struct config *cfg) {
     }
 
     if (found) {
-        snprintf(cfg->config_source, sizeof(cfg->config_source), "UCI (%s.%s)", UCI_PACKAGE, UCI_SECTION);
+        snprintf(cfg->config_source, sizeof(cfg->config_source), "UCI config");
     }
 
     return found;
@@ -721,7 +721,7 @@ int load_file_config(struct config *cfg) {
     fclose(f);
 
     if (found) {
-        snprintf(cfg->config_source, sizeof(cfg->config_source), "Config file (%s)", CONFIG_FILE);
+        snprintf(cfg->config_source, sizeof(cfg->config_source), "Config file");
     }
 
     return found;
