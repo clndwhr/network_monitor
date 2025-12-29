@@ -1,5 +1,5 @@
 #!/bin/bash
 
-cp /opt/rm520/network_monitor/src/network_monitor-armv7l /opt/builds/
+cp /opt/rm520/network_monitor/src/bridge_traffic_monitor-armv7l /opt/builds/
 
 exit 0
